@@ -74,31 +74,12 @@ def get_tree_estimators(model):
 
 def get_feature_importance(model):
 
-    tree_estimators = get_tree_estimators(model)
-
-    if not tree_estimators:
+    if not hasattr(model, "feature_importances_"):
         return None, None
-
-    importance_values = []
-
-    for name, estimator in tree_estimators:
-
-        importance = np.asarray(
-            estimator.feature_importances_
-        )
-
-        importance_values.append(
-            importance
-        )
-
-    average_importance = np.mean(
-        importance_values,
-        axis=0
-    )
 
     importance_df = pd.DataFrame({
         "Feature": FEATURES,
-        "Importance": average_importance
+        "Importance": model.feature_importances_
     })
 
     importance_df = importance_df.sort_values(
@@ -106,11 +87,7 @@ def get_feature_importance(model):
         ascending=False
     )
 
-    names = ", ".join(
-        name for name, _ in tree_estimators
-    )
-
-    return names, importance_df
+    return type(model).__name__, importance_df
 
 
 st.title("🌍 Explainable AQI Estimation")
