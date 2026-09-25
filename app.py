@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 regression_model = joblib.load("aqi_regression_model.pkl")
-classification_model = joblib.load("aqi_classification_model.pkl")
+classification_model = joblib.load("aqi_classification_model (2).pkl")
 
 st.title("🌍 Explainable AQI Estimation")
 st.write(
