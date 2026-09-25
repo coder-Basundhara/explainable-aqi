@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import shap
-import matplotlib.pyplot as plt
-
-
 
 
 st.set_page_config(
@@ -13,8 +10,6 @@ st.set_page_config(
     page_icon="🌍",
     layout="wide"
 )
-
-
 
 
 @st.cache_resource
@@ -27,8 +22,6 @@ def load_models():
 regression_model, classification_model = load_models()
 
 
-
-
 FEATURES = [
     "CO AQI Value",
     "Ozone AQI Value",
@@ -36,71 +29,8 @@ FEATURES = [
     "PM2.5 AQI Value"
 ]
 
-DEFAULT_VALUES = {
-    "CO AQI Value": 20.0,
-    "Ozone AQI Value": 50.0,
-    "NO2 AQI Value": 30.0,
-    "PM2.5 AQI Value": 100.0
-}
-
-
-
-def get_tree_estimator(model):
-    """
-    Find a tree-based estimator inside a Voting ensemble.
-    """
-
-    if hasattr(model, "named_estimators_"):
-
-        estimators = model.named_estimators_
-
-        preferred = [
-            "extra_trees",
-            "extratrees",
-            "random_forest",
-            "rf",
-            "randomforest",
-            "gradient_boosting",
-            "gb"
-        ]
-
-        for name in preferred:
-            if name in estimators:
-                estimator = estimators[name]
-
-                if hasattr(estimator, "feature_importances_"):
-                    return name, estimator
-
-        for name, estimator in estimators.items():
-
-            if hasattr(estimator, "feature_importances_"):
-                return name, estimator
-
-    return None, None
-
-
-def get_feature_importance(model):
-
-    name, estimator = get_tree_estimator(model)
-
-    if estimator is None:
-        return None, None
-
-    importance = estimator.feature_importances_
-
-    importance_df = pd.DataFrame({
-        "Feature": FEATURES,
-        "Importance": importance
-    }).sort_values(
-        "Importance",
-        ascending=False
-    )
-
-    return name, importance_df
-
 
 def create_input(co, ozone, no2, pm25):
-
     return pd.DataFrame({
         "CO AQI Value": [co],
         "Ozone AQI Value": [ozone],
@@ -117,10 +47,70 @@ def get_ensemble_estimators(model):
     return {}
 
 
-def model_name(model):
-    return type(model).__name__
+def get_tree_estimators(model):
+
+    tree_estimators = []
+
+    if hasattr(model, "named_estimators_"):
+
+        for name, estimator in model.named_estimators_.items():
+
+            if hasattr(estimator, "feature_importances_"):
+                tree_estimators.append(
+                    (name, estimator)
+                )
+
+    if not tree_estimators and hasattr(model, "estimators_"):
+
+        for i, estimator in enumerate(model.estimators_):
+
+            if hasattr(estimator, "feature_importances_"):
+                tree_estimators.append(
+                    (f"Estimator {i + 1}", estimator)
+                )
+
+    return tree_estimators
 
 
+def get_feature_importance(model):
+
+    tree_estimators = get_tree_estimators(model)
+
+    if not tree_estimators:
+        return None, None
+
+    importance_values = []
+
+    for name, estimator in tree_estimators:
+
+        importance = np.asarray(
+            estimator.feature_importances_
+        )
+
+        importance_values.append(
+            importance
+        )
+
+    average_importance = np.mean(
+        importance_values,
+        axis=0
+    )
+
+    importance_df = pd.DataFrame({
+        "Feature": FEATURES,
+        "Importance": average_importance
+    })
+
+    importance_df = importance_df.sort_values(
+        "Importance",
+        ascending=False
+    )
+
+    names = ", ".join(
+        name for name, _ in tree_estimators
+    )
+
+    return names, importance_df
 
 
 st.title("🌍 Explainable AQI Estimation")
@@ -137,16 +127,12 @@ st.caption(
 st.divider()
 
 
-
-
 tab1, tab2, tab3, tab4 = st.tabs([
     "🎯 Predict AQI",
     "📊 Model Analysis",
     "🔎 Explainability",
     "🧪 What-If Analysis"
 ])
-
-
 
 
 with tab1:
@@ -165,14 +151,14 @@ with tab1:
         co = st.number_input(
             "CO AQI",
             min_value=0.0,
-            value=DEFAULT_VALUES["CO AQI Value"],
+            value=20.0,
             step=1.0
         )
 
         ozone = st.number_input(
             "Ozone AQI",
             min_value=0.0,
-            value=DEFAULT_VALUES["Ozone AQI Value"],
+            value=50.0,
             step=1.0
         )
 
@@ -181,14 +167,14 @@ with tab1:
         no2 = st.number_input(
             "NO₂ AQI",
             min_value=0.0,
-            value=DEFAULT_VALUES["NO2 AQI Value"],
+            value=30.0,
             step=1.0
         )
 
         pm25 = st.number_input(
             "PM2.5 AQI",
             min_value=0.0,
-            value=DEFAULT_VALUES["PM2.5 AQI Value"],
+            value=100.0,
             step=1.0
         )
 
@@ -215,7 +201,10 @@ with tab1:
             input_data
         )[0]
 
-        predicted_aqi = max(0, predicted_aqi)
+        predicted_aqi = max(
+            0,
+            predicted_aqi
+        )
 
         col1, col2 = st.columns(2)
 
@@ -249,15 +238,13 @@ with tab1:
         )
 
 
-
-
 with tab2:
 
     st.header("📊 Model Analysis")
 
     st.write(
-        "This section describes the ensemble models used for AQI "
-        "regression and AQI category classification."
+        "This section describes the ensemble models and their "
+        "feature importance."
     )
 
     col1, col2 = st.columns(2)
@@ -267,7 +254,7 @@ with tab2:
         st.subheader("Regression Model")
 
         st.write(
-            f"**Final model:** `{model_name(regression_model)}`"
+            f"**Model:** `{type(regression_model).__name__}`"
         )
 
         regression_estimators = get_ensemble_estimators(
@@ -276,7 +263,7 @@ with tab2:
 
         if regression_estimators:
 
-            st.write("**Ensemble components:**")
+            st.write("**Ensemble Components:**")
 
             for name, estimator in regression_estimators.items():
 
@@ -287,7 +274,7 @@ with tab2:
         else:
 
             st.write(
-                "The saved model does not expose named ensemble components."
+                "No named ensemble components found."
             )
 
     with col2:
@@ -295,7 +282,7 @@ with tab2:
         st.subheader("Classification Model")
 
         st.write(
-            f"**Final model:** `{model_name(classification_model)}`"
+            f"**Model:** `{type(classification_model).__name__}`"
         )
 
         classification_estimators = get_ensemble_estimators(
@@ -304,7 +291,7 @@ with tab2:
 
         if classification_estimators:
 
-            st.write("**Ensemble components:**")
+            st.write("**Ensemble Components:**")
 
             for name, estimator in classification_estimators.items():
 
@@ -315,11 +302,47 @@ with tab2:
         else:
 
             st.write(
-                "The saved model does not expose named ensemble components."
+                "No named ensemble components found."
             )
 
     st.divider()
 
+    st.subheader("Saved Regression Model Structure")
+
+    st.write(
+        "Regression model:",
+        type(regression_model).__name__
+    )
+
+    st.write(
+        "Has named estimators:",
+        hasattr(
+            regression_model,
+            "named_estimators_"
+        )
+    )
+
+    st.write(
+        "Has estimators:",
+        hasattr(
+            regression_model,
+            "estimators_"
+        )
+    )
+
+    if hasattr(
+        regression_model,
+        "named_estimators_"
+    ):
+
+        st.write(
+            "Estimators:",
+            list(
+                regression_model.named_estimators_.keys()
+            )
+        )
+
+    st.divider()
 
     st.subheader("Regression Feature Importance")
 
@@ -330,12 +353,13 @@ with tab2:
     if reg_importance is not None:
 
         st.write(
-            f"Feature importance from the tree-based "
-            f"ensemble component: **{reg_name}**"
+            f"Tree-based components used: **{reg_name}**"
         )
 
         st.bar_chart(
-            reg_importance.set_index("Feature")["Importance"]
+            reg_importance.set_index(
+                "Feature"
+            )["Importance"]
         )
 
         st.dataframe(
@@ -353,8 +377,6 @@ with tab2:
 
     st.divider()
 
-    
-
     st.subheader("Classification Feature Importance")
 
     clf_name, clf_importance = get_feature_importance(
@@ -364,12 +386,13 @@ with tab2:
     if clf_importance is not None:
 
         st.write(
-            f"Feature importance from the tree-based "
-            f"ensemble component: **{clf_name}**"
+            f"Tree-based components used: **{clf_name}**"
         )
 
         st.bar_chart(
-            clf_importance.set_index("Feature")["Importance"]
+            clf_importance.set_index(
+                "Feature"
+            )["Importance"]
         )
 
         st.dataframe(
@@ -388,10 +411,9 @@ with tab2:
     st.divider()
 
     st.info(
-        "Feature importance indicates how much the selected "
-        "tree-based model component uses each pollutant feature "
-        "when making predictions. It should not be interpreted "
-        "as a causal effect."
+        "Feature importance indicates how the tree-based models "
+        "use the pollutant features during prediction. It does "
+        "not represent a causal relationship."
     )
 
 
@@ -400,18 +422,16 @@ with tab3:
     st.header("🔎 Explainability")
 
     st.write(
-        "Use SHAP to inspect how individual pollutant inputs "
-        "contribute to a model prediction."
+        "Understand how each pollutant contributes to the "
+        "predicted AQI using SHAP."
     )
 
-    st.warning(
-        "SHAP explanations shown here are model explanations, "
-        "not causal relationships between pollutants and AQI."
+    st.info(
+        "SHAP values explain the model's prediction. "
+        "They do not represent causal effects."
     )
 
     st.divider()
-
-
 
     st.subheader("Enter Values to Explain")
 
@@ -424,7 +444,7 @@ with tab3:
             min_value=0.0,
             value=20.0,
             step=1.0,
-            key="explain_co"
+            key="shap_co"
         )
 
         explain_ozone = st.number_input(
@@ -432,7 +452,7 @@ with tab3:
             min_value=0.0,
             value=50.0,
             step=1.0,
-            key="explain_ozone"
+            key="shap_ozone"
         )
 
     with col2:
@@ -442,7 +462,7 @@ with tab3:
             min_value=0.0,
             value=30.0,
             step=1.0,
-            key="explain_no2"
+            key="shap_no2"
         )
 
         explain_pm25 = st.number_input(
@@ -450,7 +470,7 @@ with tab3:
             min_value=0.0,
             value=100.0,
             step=1.0,
-            key="explain_pm25"
+            key="shap_pm25"
         )
 
     explain_input = create_input(
@@ -462,99 +482,191 @@ with tab3:
 
     st.divider()
 
-   
-
     if st.button(
-        "Explain Prediction",
+        "🔍 Explain Prediction",
         type="primary",
         use_container_width=True
     ):
 
-        tree_name, tree_model = get_tree_estimator(
-            regression_model
+        predicted_aqi = regression_model.predict(
+            explain_input
+        )[0]
+
+        predicted_aqi = max(
+            0,
+            predicted_aqi
         )
 
-        if tree_model is None:
+        st.metric(
+            "Predicted AQI",
+            f"{predicted_aqi:.2f}"
+        )
 
-            st.error(
-                "A tree-based estimator could not be found "
-                "inside the saved regression ensemble."
+        st.divider()
+
+        try:
+
+            st.subheader(
+                "SHAP Feature Contributions"
             )
 
-        else:
+            background = pd.DataFrame({
+                "CO AQI Value": [
+                    explain_co * 0.5,
+                    explain_co,
+                    explain_co * 1.5
+                ],
+                "Ozone AQI Value": [
+                    explain_ozone * 0.5,
+                    explain_ozone,
+                    explain_ozone * 1.5
+                ],
+                "NO2 AQI Value": [
+                    explain_no2 * 0.5,
+                    explain_no2,
+                    explain_no2 * 1.5
+                ],
+                "PM2.5 AQI Value": [
+                    explain_pm25 * 0.5,
+                    explain_pm25,
+                    explain_pm25 * 1.5
+                ]
+            })
 
-            try:
+            background = background.replace(
+                [np.inf, -np.inf],
+                np.nan
+            ).fillna(0)
 
-                explainer = shap.TreeExplainer(
-                    tree_model
-                )
+            explainer = shap.Explainer(
+                regression_model.predict,
+                background,
+                feature_names=FEATURES
+            )
 
-                shap_values = explainer(
-                    explain_input
-                )
+            shap_result = explainer(
+                explain_input
+            )
 
-                values = shap_values.values[0]
+            shap_values = np.asarray(
+                shap_result.values
+            )
 
-                if values.ndim > 1:
-                    values = values[:, 0]
+            if shap_values.ndim == 3:
 
-                explanation_df = pd.DataFrame({
-                    "Feature": FEATURES,
-                    "SHAP Value": values,
-                    "Absolute Impact": np.abs(values)
-                }).sort_values(
-                    "Absolute Impact",
-                    ascending=False
-                )
+                shap_values = shap_values[0, :, 0]
 
-                st.subheader(
-                    f"SHAP Explanation — {tree_name}"
-                )
+            elif shap_values.ndim == 2:
+
+                shap_values = shap_values[0]
+
+            else:
+
+                shap_values = shap_values.flatten()
+
+            shap_df = pd.DataFrame({
+                "Feature": FEATURES,
+                "SHAP Value": shap_values
+            })
+
+            shap_df["Absolute Impact"] = np.abs(
+                shap_df["SHAP Value"]
+            )
+
+            shap_df = shap_df.sort_values(
+                "Absolute Impact",
+                ascending=False
+            )
+
+            st.bar_chart(
+                shap_df.set_index(
+                    "Feature"
+                )["SHAP Value"]
+            )
+
+            st.divider()
+
+            st.subheader(
+                "Detailed Explanation"
+            )
+
+            display_df = shap_df.copy()
+
+            display_df["Direction"] = display_df[
+                "SHAP Value"
+            ].apply(
+                lambda x:
+                "Increases AQI"
+                if x > 0
+                else "Decreases AQI"
+                if x < 0
+                else "No effect"
+            )
+
+            st.dataframe(
+                display_df[
+                    [
+                        "Feature",
+                        "SHAP Value",
+                        "Absolute Impact",
+                        "Direction"
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            most_important = shap_df.iloc[0]
+
+            st.success(
+                f"Most influential feature for this prediction: "
+                f"{most_important['Feature']} "
+                f"({most_important['SHAP Value']:+.3f})"
+            )
+
+            positive_features = shap_df[
+                shap_df["SHAP Value"] > 0
+            ]
+
+            negative_features = shap_df[
+                shap_df["SHAP Value"] < 0
+            ]
+
+            if len(positive_features) > 0:
 
                 st.write(
-                    "Positive SHAP values push the model prediction "
-                    "higher, while negative values push it lower."
+                    "🟢 Features pushing the prediction higher:"
                 )
 
-                st.bar_chart(
-                    explanation_df.set_index(
-                        "Feature"
-                    )["SHAP Value"]
+                for _, row in positive_features.iterrows():
+
+                    st.write(
+                        f"- {row['Feature']}: "
+                        f"+{row['SHAP Value']:.3f}"
+                    )
+
+            if len(negative_features) > 0:
+
+                st.write(
+                    "🔵 Features pushing the prediction lower:"
                 )
 
-                st.dataframe(
-                    explanation_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                for _, row in negative_features.iterrows():
 
-                st.divider()
+                    st.write(
+                        f"- {row['Feature']}: "
+                        f"{row['SHAP Value']:.3f}"
+                    )
 
-                st.subheader("Prediction Being Explained")
+        except Exception as e:
 
-                explained_prediction = regression_model.predict(
-                    explain_input
-                )[0]
+            st.error(
+                "SHAP explanation could not be generated."
+            )
 
-                st.metric(
-                    "Ensemble AQI Prediction",
-                    f"{max(0, explained_prediction):.2f}"
-                )
-
-                st.caption(
-                    "The SHAP values above explain the selected "
-                    "tree-based component of the ensemble. The AQI "
-                    "shown here is the final ensemble prediction."
-                )
-
-            except Exception as e:
-
-                st.error(
-                    "SHAP explanation could not be generated."
-                )
-
-                st.code(str(e))
-
+            st.code(
+                str(e)
+            )
 
 
 with tab4:
@@ -568,8 +680,7 @@ with tab4:
 
     st.warning(
         "This is a model-based hypothetical analysis. "
-        "It does not establish that changing a pollutant would "
-        "causally change real-world AQI by the displayed amount."
+        "It does not establish a causal relationship."
     )
 
     st.divider()
@@ -702,7 +813,7 @@ with tab4:
 
         st.divider()
 
-        st.subheader("Comparison")
+        st.subheader("AQI Comparison")
 
         comparison = pd.DataFrame({
             "Scenario": [
@@ -716,10 +827,12 @@ with tab4:
         })
 
         st.bar_chart(
-            comparison.set_index("Scenario")
+            comparison.set_index(
+                "Scenario"
+            )
         )
 
-        st.subheader("Changed Input")
+        st.subheader("Input Comparison")
 
         changed_values = pd.DataFrame({
             "Feature": FEATURES,
@@ -743,8 +856,6 @@ with tab4:
             use_container_width=True,
             hide_index=True
         )
-
-
 
 
 st.divider()
